@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Workspace Visualizer</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/vis-timeline@7.7.3/styles/vis-timeline-graph2d.min.css">
+  <script src="https://unpkg.com/vis-timeline@7.7.3/standalone/umd/vis-timeline-graph2d.min.js"></script>
+</head>
+<body>
+
+<!-- ── Header ── -->
+<div id="header">
+  <div id="status-indicator" title="연결 상태"></div>
+  <h1>Workspace Visualizer</h1>
+  <div class="tab-bar">
+    <button class="tab-btn active" onclick="switchTab('cards')" id="tab-cards">프로젝트 카드</button>
+    <button class="tab-btn" onclick="switchTab('pnet')" id="tab-pnet">프로젝트 네트워크</button>
+    <button class="tab-btn" onclick="switchTab('graph')" id="tab-graph">파일 그래프</button>
+  </div>
+  <div class="stats" id="stats-text">로딩 중...</div>
+</div>
+
+<!-- ── Loading overlay ── -->
+<div id="loading-overlay">
+  <div class="spinner"></div>
+  <p id="loading-msg">Claude 대화 기록과 워크스페이스를 분석 중...</p>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- TAB: 프로젝트 카드 -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<div id="tab-content-cards" class="tab-content">
+  <div id="cards-grid"></div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- TAB: 프로젝트 네트워크 -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<div id="tab-content-pnet" class="tab-content hidden">
+  <div id="pnet-controls">
+    <span class="filter-label">보기:</span>
+    <button class="btn active" id="pnet-btn-all" onclick="setPnetFilter('all')">전체</button>
+    <div id="pnet-project-btns" style="display:flex;gap:4px;flex-wrap:wrap"></div>
+    <button class="btn" onclick="fitPnet()">⊞ 맞추기</button>
+    <div id="pnet-legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#1f6feb;border:2px solid #3fb950;width:10px;height:10px;border-radius:50%"></div>프로젝트(초록=완료)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#161b22;border:2px solid #3fb950;border-radius:2px;width:10px;height:10px"></div>카테고리</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#1a3a1f;border:1px solid #3fb950;border-radius:2px;width:10px;height:10px"></div>✓ 구현됨</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#2a2000;border:1px solid #d29922;border-radius:2px;width:10px;height:10px"></div>◐ 일부</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#FF6B35;border-radius:50%;width:8px;height:8px"></div>세션</div>
+    </div>
+  </div>
+  <div id="pnet-main">
+    <div id="pnet-canvas"></div>
+    <div id="pnet-detail" class="pnet-detail-panel hidden">
+      <div id="pnet-detail-inner"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- TAB: 파일 그래프 -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<div id="tab-content-graph" class="tab-content hidden">
+  <div id="controls">
+    <button class="btn active" id="btn-claude-only" onclick="toggleShowAll(false)">Claude 작업 파일</button>
+    <button class="btn" id="btn-all-files" onclick="toggleShowAll(true)">전체 파일</button>
+    <span class="filter-label">프로젝트:</span>
+    <select class="btn" id="project-filter" onchange="setProjectFilter(this.value)">
+      <option value="all">전체</option>
+    </select>
+    <button class="btn" onclick="fitGraph()">⊞ 맞추기</button>
+    <div id="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#F5E642"></div>JS</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#4287F5"></div>TS</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#E67E22"></div>HTML</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#9B59B6"></div>CSS</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#2ECC71"></div>MD</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#FF6B35"></div>Session</div>
+      <div class="legend-item"><div class="legend-line" style="border-top:2px dashed #484f58;width:16px"></div>import</div>
+      <div class="legend-item"><div class="legend-line" style="background:#FF6B35;height:2px;width:16px"></div>Claude 편집</div>
+    </div>
+  </div>
+  <div id="graph-main">
+    <div id="graph-container">
+      <div id="graph-canvas"></div>
+    </div>
+    <div id="sidebar">
+      <div id="sidebar-inner">
+        <h2>선택 없음 <span id="sidebar-close" onclick="closeSidebar()">✕</span></h2>
+        <p class="no-data">노드를 클릭하세요.</p>
+      </div>
+    </div>
+  </div>
+  <div id="timeline-container"></div>
+</div>
+
+<!-- ── Session Detail Modal ── -->
+<div id="session-modal" class="modal hidden">
+  <div class="modal-backdrop" onclick="closeSessionModal()"></div>
+  <div class="modal-box">
+    <div class="modal-header">
+      <span id="modal-title">세션 대화 내용</span>
+      <span class="modal-close" onclick="closeSessionModal()">✕</span>
+    </div>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+<!-- ── Toast ── -->
+<div id="toast"></div>
+
+<script src="js/graph.js"></script>
+<script src="js/sidebar.js"></script>
+<script src="js/timeline.js"></script>
+<script src="js/cards.js"></script>
+<script src="js/pnet.js"></script>
+<script src="js/sse-client.js"></script>
+
+<script>
+  const _origInitGraph = initGraph;
+  initGraph = function(data) {
+    _origInitGraph(data);
+    window._graphInitialized = true;
+    window.nodesDataset = nodesDataset;
+    window.edgesDataset = edgesDataset;
+    window.network = network;
+  };
+  const _origApplyDelta = applyDelta;
+  applyDelta = function(data) {
+    _origApplyDelta(data);
+    window.nodesDataset = nodesDataset;
+    window.edgesDataset = edgesDataset;
+    window.network = network;
+  };
+
+  function switchTab(tab) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+    document.getElementById('tab-' + tab).classList.add('active');
+    document.getElementById('tab-content-' + tab).classList.remove('hidden');
+    if (tab === 'graph' && window.network) {
+      setTimeout(() => window.network.fit({ animation: true }), 100);
+    }
+    if (tab === 'pnet' && window.pnetNetwork) {
+      setTimeout(() => window.pnetNetwork.fit({ animation: true }), 100);
+    }
+  }
+
+  function toggleShowAll(val) {
+    setShowAllFiles(val);
+    document.getElementById('btn-claude-only').classList.toggle('active', !val);
+    document.getElementById('btn-all-files').classList.toggle('active', val);
+  }
+
+  document.getElementById('btn-claude-only').classList.add('active');
+</script>
+</body>
+</html>
