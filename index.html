@@ -19,6 +19,7 @@
     <button class="tab-btn active" onclick="switchTab('cards')" id="tab-cards">프로젝트 카드</button>
     <button class="tab-btn" onclick="switchTab('pnet')" id="tab-pnet">프로젝트 네트워크</button>
     <button class="tab-btn" onclick="switchTab('graph')" id="tab-graph">파일 그래프</button>
+    <button class="tab-btn" onclick="switchTab('decisions')" id="tab-decisions">AI Decision Log</button>
   </div>
   <div class="stats" id="stats-text">로딩 중...</div>
 </div>
@@ -33,7 +34,18 @@
 <!-- TAB: 프로젝트 카드 -->
 <!-- ══════════════════════════════════════════════════════════════ -->
 <div id="tab-content-cards" class="tab-content">
-  <div id="cards-grid"></div>
+  <div id="cards-layout">
+    <div id="cards-grid"></div>
+    <div id="phase-side-panel" class="phase-side-panel">
+      <div class="phase-panel-header">
+        <span id="phase-panel-title">Phase 진행률</span>
+        <button class="phase-panel-close" onclick="closePhasePanel()">✕</button>
+      </div>
+      <div id="phase-panel-body" class="phase-panel-body">
+        <p class="no-data" style="padding:16px">카드에서 📋 Phase 버튼을 클릭하세요.</p>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- ══════════════════════════════════════════════════════════════ -->
@@ -98,6 +110,22 @@
   <div id="timeline-container"></div>
 </div>
 
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- TAB: AI Decision Log -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<div id="tab-content-decisions" class="tab-content hidden">
+  <div id="decisions-controls">
+    <span class="filter-label">프로젝트:</span>
+    <select class="btn" id="decisions-project-filter" onchange="loadDecisions(this.value)">
+      <option value="">-- 선택 --</option>
+    </select>
+    <div id="decisions-summary" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"></div>
+  </div>
+  <div id="decisions-main">
+    <p class="no-data" style="padding:32px">프로젝트를 선택하면 AI의 의사결정 흐름을 볼 수 있습니다.</p>
+  </div>
+</div>
+
 <!-- ── Session Detail Modal ── -->
 <div id="session-modal" class="modal hidden">
   <div class="modal-backdrop" onclick="closeSessionModal()"></div>
@@ -118,6 +146,8 @@
 <script src="js/timeline.js"></script>
 <script src="js/cards.js"></script>
 <script src="js/pnet.js"></script>
+<script src="js/phase.js"></script>
+<script src="js/decisions.js"></script>
 <script src="js/sse-client.js"></script>
 
 <script>
@@ -147,6 +177,12 @@
     }
     if (tab === 'pnet' && window.pnetNetwork) {
       setTimeout(() => window.pnetNetwork.fit({ animation: true }), 100);
+    }
+    if (tab === 'decisions') {
+      // populate filter on first open
+      if (window._allProjectsDataRaw) {
+        populateDecisionsFilter(window._allProjectsDataRaw);
+      }
     }
   }
 

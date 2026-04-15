@@ -74,10 +74,7 @@ function renderCard(p) {
        </div>`
     : '';
 
-  const claudeMdHtml = p.claudeMd
-    ? `<div class="section-label" style="margin-top:10px">📋 CLAUDE.md</div>
-       <div class="claude-md-summary">${escapeHtml(p.claudeMd)}</div>`
-    : '';
+  const claudeMdHtml = renderCLAUDEmd(p);
 
   const sessionCount = (p.sessions || []).length;
   const sessionsHtml = sessionCount > 0
@@ -96,6 +93,7 @@ function renderCard(p) {
       <div class="card-title-row">
         <h3 class="card-title">${p.name}</h3>
         <span class="confidence-badge" style="color:${conf.color};background:${conf.bg}">${conf.label}</span>
+        <button class="phase-btn" onclick="openPhasePanel('${escapeAttr(p.name)}')">📋 Phase</button>
         <button class="hide-btn" title="숨기기" onclick="toggleHideProject('${escapeAttr(p.name)}')">숨김</button>
       </div>
       <p class="card-desc">${p.description || '설명 없음'}</p>
@@ -231,6 +229,92 @@ function showAllSessions(projectName) {
   document.getElementById('session-modal').classList.remove('hidden');
 }
 
+// ─── CLAUDE.md renderer ───────────────────────────────────────────────────────
+function renderCLAUDEmd(p) {
+  if (!p.claudeMdSections && !p.claudeMd) return '';
+
+  const cardId = `cmd-${p.name.replace(/[^a-zA-Z0-9]/g, '_')}`;
+
+  // Summary line always shown
+  const summary = p.claudeMd
+    ? `<div class="claude-md-summary">${escapeHtml(p.claudeMd)}</div>`
+    : '';
+
+  if (!p.claudeMdSections || !p.claudeMdSections.length) {
+    return `<div class="section-label" style="margin-top:10px">📋 CLAUDE.md</div>${summary}`;
+  }
+
+  // Tab buttons (max 6 sections)
+  const sections = p.claudeMdSections.slice(0, 6);
+  const tabs = sections.map((s, i) =>
+    `<button class="cmd-tab${i === 0 ? ' active' : ''}" onclick="switchCmdTab('${cardId}',${i})">${escapeHtml(s.title)}</button>`
+  ).join('');
+
+  // Tab panels
+  const panels = sections.map((s, i) =>
+    `<div class="cmd-panel${i === 0 ? '' : ' hidden'}" data-panel="${cardId}-${i}">
+      ${s.blocks.map(b => renderCmdBlock(b)).join('')}
+    </div>`
+  ).join('');
+
+  return `
+  <div class="section-label" style="margin-top:10px">📋 CLAUDE.md
+    <span class="cmd-expand-btn" onclick="openCLAUDEmdModal('${escapeAttr(p.name)}')">전체 보기</span>
+  </div>
+  ${summary}
+  <div class="cmd-tabs" id="${cardId}">
+    <div class="cmd-tab-bar">${tabs}</div>
+    <div class="cmd-tab-content">${panels}</div>
+  </div>`;
+}
+
+function renderCmdBlock(block) {
+  if (block.type === 'prose') {
+    return `<p class="cmd-prose">${escapeHtml(block.text)}</p>`;
+  }
+  if (block.type === 'list') {
+    return `<ul class="cmd-list">${block.items.map(i => `<li>${escapeHtml(i)}</li>`).join('')}</ul>`;
+  }
+  if (block.type === 'code') {
+    return `<div class="cmd-code-wrap"><span class="cmd-code-lang">${escapeHtml(block.lang)}</span><pre class="cmd-code">${escapeHtml(block.content)}</pre></div>`;
+  }
+  if (block.type === 'table' && block.rows.length) {
+    const header = block.rows[0];
+    const body = block.rows.slice(1);
+    return `<table class="cmd-table">
+      <thead><tr>${header.map(c => `<th>${escapeHtml(c)}</th>`).join('')}</tr></thead>
+      <tbody>${body.map(r => `<tr>${r.map(c => `<td>${escapeHtml(c)}</td>`).join('')}</tr>`).join('')}</tbody>
+    </table>`;
+  }
+  return '';
+}
+
+function switchCmdTab(cardId, idx) {
+  const container = document.getElementById(cardId);
+  if (!container) return;
+  container.querySelectorAll('.cmd-tab').forEach((t, i) => t.classList.toggle('active', i === idx));
+  container.querySelectorAll('.cmd-panel').forEach((p, i) => p.classList.toggle('hidden', i !== idx));
+}
+
+function openCLAUDEmdModal(projectName) {
+  const project = _allProjectsData.find(p => p.name === projectName);
+  if (!project || !project.claudeMdSections) return;
+
+  document.getElementById('modal-title').textContent = `📋 ${projectName} · CLAUDE.md`;
+  const body = document.getElementById('modal-body');
+
+  body.innerHTML = `<div class="cmd-modal-content">
+    ${project.claudeMdSections.map(s => `
+      <div class="cmd-modal-section">
+        <div class="cmd-modal-heading level-${s.level}">${escapeHtml(s.title)}</div>
+        ${s.blocks.map(b => renderCmdBlock(b)).join('')}
+      </div>
+    `).join('')}
+  </div>`;
+
+  document.getElementById('session-modal').classList.remove('hidden');
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function escapeHtml(str) {
   return String(str)
@@ -272,6 +356,72 @@ window.renderCards = renderCards;
 window.openSessionModal = openSessionModal;
 window.closeSessionModal = closeSessionModal;
 window.showAllSessions = showAllSessions;
+// ─── Phase Side Panel ─────────────────────────────────────────────────────────
+function openPhasePanel(projectName) {
+  const panel = document.getElementById('phase-side-panel');
+  if (!panel) return;
+
+  const project = _allProjectsData.find(p => p.name === projectName);
+  document.getElementById('phase-panel-title').textContent = `${projectName} · Phase`;
+
+  if (!project?.phaseData) {
+    document.getElementById('phase-panel-body').innerHTML = `
+      <p class="no-data" style="padding:16px;line-height:1.8">
+        ROADMAP.md / PHASE.md / TODO.md 파일이 없습니다.<br><br>
+        <code style="font-size:11px;color:#79c0ff">## Phase 1 — 제목</code><br>
+        형식으로 작성하면 자동으로 표시됩니다.
+      </p>`;
+  } else {
+    document.getElementById('phase-panel-body').innerHTML = renderPhasePanelContent(project.phaseData);
+  }
+  panel.classList.add('open');
+}
+
+function closePhasePanel() {
+  document.getElementById('phase-side-panel')?.classList.remove('open');
+}
+
+function renderPhasePanelContent(phaseData) {
+  const overall = phaseData.overallProgress || 0;
+  const overallColor = overall === 100 ? '#3fb950' : overall > 50 ? '#d29922' : '#388bfd';
+
+  const phaseBlocks = phaseData.phases.map(p => {
+    const color = p.progress === 100 ? '#3fb950' : p.progress > 50 ? '#d29922' : '#388bfd';
+    const doneCount = p.items.filter(i => i.done).length;
+    const items = p.items.map(item => `
+      <div class="phase-item ${item.done ? 'done' : ''}">
+        <span class="phase-item-check">${item.done ? '✓' : '○'}</span>
+        <span class="phase-item-text">${escapeHtml(item.text)}</span>
+      </div>`).join('');
+
+    return `
+    <div class="phase-block">
+      <div class="phase-block-header">
+        <span class="phase-block-title">Phase ${p.number} <span style="color:#8b949e;font-weight:normal">${escapeHtml(p.title)}</span></span>
+        <span class="phase-block-pct" style="color:${color}">${p.progress}%</span>
+      </div>
+      <div class="phase-block-bar-track">
+        <div class="phase-block-bar-fill" style="width:${p.progress}%;background:${color}"></div>
+      </div>
+      ${p.items.length ? `<div class="phase-items">${items}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  return `
+  <div class="phase-overall-row">
+    <span style="color:#8b949e;font-size:11px">출처: ${escapeHtml(phaseData.source)}</span>
+    <span style="color:${overallColor};font-weight:600">전체 ${overall}%</span>
+  </div>
+  <div class="phase-overall-track" style="margin:6px 0 16px">
+    <div class="phase-overall-fill" style="width:${overall}%;background:${overallColor}"></div>
+  </div>
+  ${phaseBlocks}`;
+}
+
 window.toggleHideProject = toggleHideProject;
 window.getVisibleProjects = getVisibleProjects;
+window.switchCmdTab = switchCmdTab;
+window.openCLAUDEmdModal = openCLAUDEmdModal;
+window.openPhasePanel = openPhasePanel;
+window.closePhasePanel = closePhasePanel;
 window._setProjectsData = (data) => { _allProjectsData = data; window._allProjectsDataRaw = data; };

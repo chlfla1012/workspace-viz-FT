@@ -206,6 +206,62 @@ let pnetNodes   = null;
 let pnetEdges   = null;
 let _pnetProjects = [];
 
+// Build pnet nodes/edges from CLAUDE.md sections when FEATURE_DATA is absent
+function buildPnetFromCLAUDEmd(p, projId, nodes, edges) {
+  const sections = p.claudeMdSections || [];
+  sections.forEach((sec, si) => {
+    const catColor = CAT_COLORS[si % CAT_COLORS.length];
+    const catId = `cat:${p.name}:${sec.title}`;
+
+    nodes.push({
+      id: catId,
+      label: sec.title,
+      title: `<b>${sec.title}</b>`,
+      group: 'category',
+      shape: 'box',
+      color: { background: '#161b22', border: catColor,
+               highlight: { background: '#21262d', border: catColor } },
+      font: { color: '#e6edf3', size: 11 },
+      borderWidth: 2,
+      _cat: { name: sec.title, features: [] },
+      _project: p.name,
+    });
+    edges.push({
+      id: `e:${projId}:${catId}`,
+      from: projId, to: catId,
+      color: { color: catColor + '88' },
+      arrows: { to: { enabled: true, scaleFactor: 0.4 } },
+    });
+
+    // List items inside section → feature nodes
+    const listBlock = sec.blocks.find(b => b.type === 'list');
+    if (listBlock) {
+      listBlock.items.slice(0, 8).forEach((item, fi) => {
+        const featId = `feat:${p.name}:${sec.title}:${fi}`;
+        const label = item.length > 30 ? item.slice(0, 28) + '…' : item;
+        nodes.push({
+          id: featId,
+          label,
+          title: item,
+          group: 'feature',
+          shape: 'box',
+          color: { background: '#1a2a3a', border: '#388bfd55',
+                   highlight: { background: '#1f3a5f', border: '#79c0ff' } },
+          font: { color: '#8b949e', size: 10 },
+          borderWidth: 1,
+        });
+        edges.push({
+          id: `e:${catId}:${featId}`,
+          from: catId, to: featId,
+          color: { color: catColor + '55' },
+          arrows: { to: { enabled: true, scaleFactor: 0.3 } },
+          dashes: true,
+        });
+      });
+    }
+  });
+}
+
 function buildPnetData(projects) {
   const nodes = [];
   const edges = [];
@@ -232,15 +288,19 @@ function buildPnetData(projects) {
     });
 
     if (!featData) {
-      // No data — show placeholder
-      const uid = `feat:${p.name}:unknown`;
-      nodes.push({ id: uid, label: '분석 데이터 없음', group: 'unknown',
-        shape: 'box', size: 10,
-        color: { background: '#2a0a0a', border: '#f85149' },
-        font: { color: '#f85149', size: 10 } });
-      edges.push({ id: `e:${projId}:${uid}`, from: projId, to: uid,
-        color: { color: '#f8514944' }, dashes: true,
-        arrows: { to: { enabled: true, scaleFactor: 0.4 } } });
+      // Try to build from CLAUDE.md sections
+      if (p.claudeMdSections && p.claudeMdSections.length) {
+        buildPnetFromCLAUDEmd(p, projId, nodes, edges);
+      } else {
+        const uid = `feat:${p.name}:unknown`;
+        nodes.push({ id: uid, label: '분석 데이터 없음', group: 'unknown',
+          shape: 'box', size: 10,
+          color: { background: '#2a0a0a', border: '#f85149' },
+          font: { color: '#f85149', size: 10 } });
+        edges.push({ id: `e:${projId}:${uid}`, from: projId, to: uid,
+          color: { color: '#f8514944' }, dashes: true,
+          arrows: { to: { enabled: true, scaleFactor: 0.4 } } });
+      }
       return;
     }
 
